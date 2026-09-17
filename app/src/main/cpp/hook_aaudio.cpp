@@ -9,7 +9,6 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
-// মূল AAudioStream_read ফাংশন পয়েন্টার
 static aaudio_result_t (*orig_AAudioStream_read)(
     AAudioStream* stream,
     void* buffer,
@@ -17,7 +16,10 @@ static aaudio_result_t (*orig_AAudioStream_read)(
     int64_t timeoutNanoseconds
 ) = nullptr;
 
-// রিপ্লেসমেন্ট ফাংশন (মাইক্রোফোন ইনপুট ডেটা জিরো/মিউট করা)
+static aaudio_direction_t (*p_AAudioStream_getDirection)(AAudioStream* stream) = nullptr;
+static int32_t (*p_AAudioStream_getChannelCount)(AAudioStream* stream) = nullptr;
+static aaudio_format_t (*p_AAudioStream_getFormat)(AAudioStream* stream) = nullptr;
+
 static aaudio_result_t fake_AAudioStream_read(
     AAudioStream* stream,
     void* buffer,
@@ -27,10 +29,47 @@ static aaudio_result_t fake_AAudioStream_read(
     aaudio_result_t result = orig_AAudioStream_read(stream, buffer, numFrames, timeoutNanoseconds);
 
     if (result > 0 && buffer != nullptr) {
-        // শুধুমাত্র মাইক্রোফোন ইনপুট হলে ডেটা মিউট করা হবে
-        if (AAudioStream_getDirection(stream) == AAUDIO_DIRECTION_INPUT) {
-            int32_t channelCount = AAudioStream_getChannelCount(stream);
-            aaudio_format_t format = AAudioStream_getFormat(stream);
+        bool isInput = true;
+        if (p_AAudioStream_getDirection != nullptr) {
+            isInput = (p_AAudioStream_getDirection(stream) == AAUDIO_DIRECTION_INPUT);
+        }
 
-            size_t bytesPerSample = (format == AAUDIO_FORMAT_PCM_FLOAT) ? 4 : 2;
-            size_t totalBytes = (size_t)result * channelCount * bytesPerSample;
+        if (isInput) {
+            int32_t channelCount = 1;
+            if (p_AAudioStream_getChannelCount != nullptr) {
+                channelCount = p_AAudioStream_getChannelCount(stream);
+            }
+
+            size_t bytesPerSample = 2;
+            if (p_AAudioStream_getFormat != nullptr && p_AAudioStream_getFormat(stream) == AAUDIO_FORMAT_PCM_FLOAT) {
+                bytesPerSample = 4;
+            }
+
+            size_t totalBytes = (size_t)result * (size_t)channelCount * bytesPerSample;
+            memset(buffer, 0, totalBytes);
+        }
+    }
+    return result;
+}
+
+void init_aaudio_hook() {
+    LOGI("Initializing AAudio Hook via Dobby...");
+
+    void* handle = dlopen("libaaudio.so", RTLD_NOW);
+    if (!handle) {
+        LOGE("Failed to open libaaudio.so");
+        return;
+    }
+
+    p_AAudioStream_getDirection = (aaudio_direction_t (*)(AAudioStream*))dlsym(handle, "AAudioStream_getDirection");
+    p_AAudioStream_getChannelCount = (int32_t (*)(AAudioStream*))dlsym(handle, "AAudioStream_getChannelCount");
+    p_AAudioStream_getFormat = (aaudio_format_t (*)(AAudioStream*))dlsym(handle, "AAudioStream_getFormat");
+
+    void* sym_read = dlsym(handle, "AAudioStream_read");
+    if (sym_read) {
+        DobbyHook(sym_read, (dobby_dummy_func_t)fake_AAudioStream_read, (dobby_dummy_func_t*)&orig_AAudioStream_read);
+        LOGI("Successfully hooked AAudioStream_read with Dobby");
+    } else {
+        LOGE("Failed to locate AAudioStream_read symbol");
+    }
+}
