@@ -34,28 +34,3 @@ static aaudio_result_t fake_AAudioStream_read(
 
             size_t bytesPerSample = (format == AAUDIO_FORMAT_PCM_FLOAT) ? 4 : 2;
             size_t totalBytes = (size_t)result * channelCount * bytesPerSample;
-
-            // মাইক্রোফোন বাফার পুরোপুরি সাইলেন্ট/জিরো করা
-            memset(buffer, 0, totalBytes);
-        }
-    }
-    return result;
-}
-
-void init_aaudio_hook() {
-    LOGI("Initializing AAudio Hook via Dobby...");
-
-    void* handle = dlopen("libaaudio.so", RTLD_NOW);
-    if (!handle) {
-        LOGE("Failed to open libaaudio.so");
-        return;
-    }
-
-    void* sym_read = dlsym(handle, "AAudioStream_read");
-    if (sym_read) {
-        DobbyHook(sym_read, (dobby_dummy_func_t)fake_AAudioStream_read, (dobby_dummy_func_t*)&orig_AAudioStream_read);
-        LOGI("Successfully hooked AAudioStream_read with Dobby");
-    } else {
-        LOGE("Failed to locate AAudioStream_read symbol");
-    }
-}
