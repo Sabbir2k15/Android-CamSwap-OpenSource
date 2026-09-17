@@ -1,4 +1,5 @@
-#pragma once
+#ifndef NATIVE_AUDIO_HOOK_H
+#define NATIVE_AUDIO_HOOK_H
 
 #include <jni.h>
 
@@ -6,10 +7,10 @@
 extern "C" {
 #endif
 
-// Called from hook_aaudio.cpp / hook_opensles.cpp
-void install_aaudio_hooks();
-void install_opensles_hooks();
+void init_native_audio_hook();
 
 #ifdef __cplusplus
 }
 #endif
+
+#endif // NATIVE_AUDIO_HOOK_H
