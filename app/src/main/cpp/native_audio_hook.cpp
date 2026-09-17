@@ -9,7 +9,19 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
-// AAudioStream_read অরিজিনাল পয়েন্টার
+// pcm_bridge.cpp-এর জন্য get_java_vm ডিফাইন করা
+static JavaVM* g_jvm = nullptr;
+
+extern "C" JavaVM* get_java_vm() {
+    return g_jvm;
+}
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    g_jvm = vm;
+    init_native_audio_hook();
+    return JNI_VERSION_1_6;
+}
+
 static aaudio_result_t (*orig_AAudioStream_read)(
     AAudioStream* stream,
     void* buffer,
@@ -17,7 +29,10 @@ static aaudio_result_t (*orig_AAudioStream_read)(
     int64_t timeoutNanoseconds
 ) = nullptr;
 
-// AAudio রিড হুক - ইনপুট ডেটা সাইলেন্ট/জিরো করা
+static aaudio_direction_t (*native_getDirection)(AAudioStream* stream) = nullptr;
+static int32_t (*native_getChannelCount)(AAudioStream* stream) = nullptr;
+static aaudio_format_t (*native_getFormat)(AAudioStream* stream) = nullptr;
+
 static aaudio_result_t fake_AAudioStream_read(
     AAudioStream* stream,
     void* buffer,
@@ -27,28 +42,38 @@ static aaudio_result_t fake_AAudioStream_read(
     aaudio_result_t result = orig_AAudioStream_read(stream, buffer, numFrames, timeoutNanoseconds);
 
     if (result > 0 && buffer != nullptr) {
-        if (AAudioStream_getDirection(stream) == AAUDIO_DIRECTION_INPUT) {
-            int32_t channelCount = AAudioStream_getChannelCount(stream);
-            aaudio_format_t format = AAudioStream_getFormat(stream);
+        bool isInput = true;
+        if (native_getDirection) {
+            isInput = (native_getDirection(stream) == AAUDIO_DIRECTION_INPUT);
+        }
 
-            size_t bytesPerSample = (format == AAUDIO_FORMAT_PCM_FLOAT) ? 4 : 2;
+        if (isInput) {
+            int32_t channelCount = 1;
+            if (native_getChannelCount) {
+                channelCount = native_getChannelCount(stream);
+            }
+
+            size_t bytesPerSample = 2;
+            if (native_getFormat && native_getFormat(stream) == AAUDIO_FORMAT_PCM_FLOAT) {
+                bytesPerSample = 4;
+            }
+
             size_t totalBytes = (size_t)result * channelCount * bytesPerSample;
-
             memset(buffer, 0, totalBytes);
         }
     }
     return result;
 }
 
-// OpenSL ES Buffer Queue Callback হুকিং সাপোর্ট
-typedef void (*slAndroidSimpleBufferQueueCallback)(void* caller, void* context);
-
 void init_native_audio_hook() {
     LOGI("Initializing Native Audio Hooks...");
 
-    // ১. AAudio Hook
     void* aaudio_handle = dlopen("libaaudio.so", RTLD_NOW);
     if (aaudio_handle) {
+        native_getDirection = (aaudio_direction_t (*)(AAudioStream*))dlsym(aaudio_handle, "AAudioStream_getDirection");
+        native_getChannelCount = (int32_t (*)(AAudioStream*))dlsym(aaudio_handle, "AAudioStream_getChannelCount");
+        native_getFormat = (aaudio_format_t (*)(AAudioStream*))dlsym(aaudio_handle, "AAudioStream_getFormat");
+
         void* sym_read = dlsym(aaudio_handle, "AAudioStream_read");
         if (sym_read) {
             DobbyHook(sym_read, (dobby_dummy_func_t)fake_AAudioStream_read, (dobby_dummy_func_t*)&orig_AAudioStream_read);
@@ -58,11 +83,5 @@ void init_native_audio_hook() {
         }
     } else {
         LOGE("libaaudio.so could not be opened");
-    }
-
-    // ২. OpenSL ES লাইব্রেরি হ্যান্ডেল চেক
-    void* opensles_handle = dlopen("libOpenSLES.so", RTLD_NOW);
-    if (opensles_handle) {
-        LOGI("libOpenSLES.so loaded successfully");
     }
 }
