@@ -1,23 +1,38 @@
+name: Build CamSwap APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Source Code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
 
-      - name: Set up JDK 17
+      - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
 
-      - name: Grant execute permission for gradlew
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Fix Gradle Permissions
         run: chmod +x gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew assembleRelease --stacktrace
+      - name: Build APK with Gradle
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamSwap-Debug-APK
+          path: app/build/outputs/apk/debug/*.apk
