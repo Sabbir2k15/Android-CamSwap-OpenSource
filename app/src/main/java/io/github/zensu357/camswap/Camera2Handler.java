@@ -168,6 +168,9 @@ public class Camera2Handler implements ICameraHandler {
                         args[0] = vSurface;
                     } else if (isYuv) {
                         HookMain.camera2Hook.pumpDirectYuvFrame(targetSurface);
+                        // Register for CONTINUOUS pumping so the reader doesn't starve
+                        // after redirect (critical for IMO's VideoCapturer2).
+                        HookMain.camera2Hook.keepYuvSurfaceForPumping(targetSurface);
                         Surface vSurface = HookMain.camera2Hook.getVirtualSurfaceFor(targetSurface);
                         if (vSurface == null || !vSurface.isValid()) {
                             vSurface = HookMain.camera2Hook.getVirtualSurface();
