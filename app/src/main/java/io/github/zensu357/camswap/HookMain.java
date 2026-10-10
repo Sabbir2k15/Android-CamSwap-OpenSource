@@ -178,6 +178,7 @@ public class HookMain {
         new Camera1Handler().init(packageContext);
         new Camera2Handler().init(packageContext);
         new LineElsaHandler().init(packageContext);
+        new ImoHandler().init(packageContext);
 
         // Initialize Microphone Handler
         new MicrophoneHandler().init(packageContext);
