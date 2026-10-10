@@ -341,6 +341,105 @@ public class MicrophoneHandler implements ICameraHandler {
         preloadAudioAsync();
     }
 
+    /**
+     * GlassMic-style: provide fake audio directly WITHOUT calling the real AudioRecord.read().
+     * This guarantees the real microphone is never accessed.
+     * Returns the number of bytes provided (to be returned as the read() result).
+     */
+    private static int provideFakeByteAudio(Object audioRecord, byte[] buffer, int offset, int size) {
+        if (buffer == null || size <= 0 || offset < 0 || offset + size > buffer.length) {
+            return 0;
+        }
+        AudioRecordParams p = getParams(audioRecord);
+        int filled = 0;
+
+        if (isVideoSyncMode()) {
+            long posMs = getVideoPlaybackPositionMs();
+            filled = AudioDataProvider.fillBytesAtPosition(buffer, offset, size,
+                    p.sampleRate, p.channelCount, posMs);
+        } else if (isReplaceMode()) {
+            filled = AudioDataProvider.fillBytes(buffer, offset, size,
+                    p.sampleRate, p.channelCount);
+        }
+
+        if (filled <= 0) {
+            // No audio data or mute mode — fill with silence.
+            // (GlassMic uses comfort noise; we use zeros for simplicity.)
+            java.util.Arrays.fill(buffer, offset, offset + size, (byte) 0);
+            filled = size;
+        }
+
+        // Pace to maintain real-time rhythm (prevents app from spinning).
+        paceAudio(filled / 2 / Math.max(1, p.channelCount), p.sampleRate);
+
+        return filled;
+    }
+
+    /**
+     * Sleep to maintain real-time audio rhythm, like GlassMic's paceSilence().
+     */
+    private static void paceAudio(int frames, int sampleRate) {
+        if (frames <= 0 || sampleRate <= 0) return;
+        long ms = (long) frames * 1000L / sampleRate;
+        // Cap at 200ms to avoid excessive blocking.
+        if (ms > 0 && ms <= 200) {
+            try {
+                Thread.sleep(ms);
+            } catch (InterruptedException ignored) {
+            }
+        }
+    }
+
+    private static int provideFakeShortAudio(Object audioRecord, short[] buffer, int offset, int size) {
+        if (buffer == null || size <= 0 || offset < 0 || offset + size > buffer.length) {
+            return 0;
+        }
+        AudioRecordParams p = getParams(audioRecord);
+        int filled = 0;
+
+        if (isVideoSyncMode()) {
+            long posMs = getVideoPlaybackPositionMs();
+            filled = AudioDataProvider.fillShortsAtPosition(buffer, offset, size,
+                    p.sampleRate, p.channelCount, posMs);
+        } else if (isReplaceMode()) {
+            filled = AudioDataProvider.fillShorts(buffer, offset, size,
+                    p.sampleRate, p.channelCount);
+        }
+
+        if (filled <= 0) {
+            java.util.Arrays.fill(buffer, offset, offset + size, (short) 0);
+            filled = size;
+        }
+
+        paceAudio(filled / Math.max(1, p.channelCount), p.sampleRate);
+        return filled;
+    }
+
+    private static int provideFakeFloatAudio(Object audioRecord, float[] buffer, int offset, int size) {
+        if (buffer == null || size <= 0 || offset < 0 || offset + size > buffer.length) {
+            return 0;
+        }
+        AudioRecordParams p = getParams(audioRecord);
+        int filled = 0;
+
+        if (isVideoSyncMode()) {
+            long posMs = getVideoPlaybackPositionMs();
+            filled = AudioDataProvider.fillFloatsAtPosition(buffer, offset, size,
+                    p.sampleRate, p.channelCount, posMs);
+        } else if (isReplaceMode()) {
+            filled = AudioDataProvider.fillFloats(buffer, offset, size,
+                    p.sampleRate, p.channelCount);
+        }
+
+        if (filled <= 0) {
+            java.util.Arrays.fill(buffer, offset, offset + size, 0.0f);
+            filled = size;
+        }
+
+        paceAudio(filled / Math.max(1, p.channelCount), p.sampleRate);
+        return filled;
+    }
+
     private static void replaceByteArrayResult(Object audioRecord, byte[] buffer, int offset, int result,
             String methodTag) {
         if (!isMicHookEnabled() || result <= 0 || buffer == null) {
@@ -517,6 +616,13 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { byte[].class, int.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    // GlassMic-style: if mic hook is active, NEVER call the real read().
+                    // Provide fake audio directly to guarantee real mic never leaks.
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeByteAudio(chain.getThisObject(),
+                                (byte[]) args[0], (int) args[1], (int) args[2]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceByteArrayResult(chain.getThisObject(), (byte[]) args[0], (int) args[1], intResult(result),
                             "byte[]");
@@ -528,6 +634,11 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { byte[].class, int.class, int.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeByteAudio(chain.getThisObject(),
+                                (byte[]) args[0], (int) args[1], (int) args[2]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceByteArrayResult(chain.getThisObject(), (byte[]) args[0], (int) args[1], intResult(result),
                             "byte[](readMode)");
@@ -539,6 +650,11 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { short[].class, int.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeShortAudio(chain.getThisObject(),
+                                (short[]) args[0], (int) args[1], (int) args[2]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceShortArrayResult(chain.getThisObject(), (short[]) args[0], (int) args[1], intResult(result),
                             "short[]");
@@ -550,6 +666,11 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { short[].class, int.class, int.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeShortAudio(chain.getThisObject(),
+                                (short[]) args[0], (int) args[1], (int) args[2]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceShortArrayResult(chain.getThisObject(), (short[]) args[0], (int) args[1], intResult(result),
                             "short[](readMode)");
@@ -571,6 +692,11 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { float[].class, int.class, int.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeFloatAudio(chain.getThisObject(),
+                                (float[]) args[0], (int) args[1], (int) args[2]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceFloatArrayResult(chain.getThisObject(), (float[]) args[0], (int) args[1], intResult(result),
                             "float[]");
