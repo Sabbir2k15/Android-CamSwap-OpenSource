@@ -36,7 +36,7 @@ android {
         minSdk 26
         targetSdk 36
         versionCode versionCodeInt
-        versionName "2.8.${versionSuffix}-imo5"
+        versionName "2.8.${versionSuffix}-imo6"
 
         // Inject build time into BuildConfig
         buildConfigField "String", "BUILD_TIME", "\"${buildTime}\""
