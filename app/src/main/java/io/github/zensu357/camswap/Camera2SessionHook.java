@@ -2490,6 +2490,19 @@ public final class Camera2SessionHook {
         }
     }
 
+    /**
+     * Register a YUV ImageReader surface for continuous fake-frame pumping.
+     * Used when addTarget redirects a YUV surface (e.g. IMO's VideoCapturer2)
+     * so the reader keeps receiving fake frames instead of starving.
+     */
+    public void keepYuvSurfaceForPumping(android.view.Surface surface) {
+        if (surface != null && surface.isValid()) {
+            sessionKeptYuvSurfaces.add(surface);
+            LogUtil.log("【CS】YUV surface registered for continuous pumping: " + surface);
+            startContinuousYuvPumper();
+        }
+    }
+
     private final java.util.concurrent.atomic.AtomicLong lastMonotonicPtsNs =
             new java.util.concurrent.atomic.AtomicLong(SystemClock.elapsedRealtimeNanos());
 
