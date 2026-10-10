@@ -352,11 +352,19 @@ public class MicrophoneHandler implements ICameraHandler {
 
         if (isVideoSyncMode()) {
             long posMs = getVideoPlaybackPositionMs();
-            AudioDataProvider.fillBytesAtPosition(buffer, offset, result,
+            int filled = AudioDataProvider.fillBytesAtPosition(buffer, offset, result,
                     p.sampleRate, p.channelCount, posMs);
+            if (filled <= 0) {
+                // No replacement audio available — block real mic with silence.
+                Arrays.fill(buffer, offset, offset + result, (byte) 0);
+            }
         } else if (isReplaceMode()) {
-            AudioDataProvider.fillBytes(buffer, offset, result,
+            int filled = AudioDataProvider.fillBytes(buffer, offset, result,
                     p.sampleRate, p.channelCount);
+            if (filled <= 0) {
+                // No replacement audio available — block real mic with silence.
+                Arrays.fill(buffer, offset, offset + result, (byte) 0);
+            }
         } else {
             Arrays.fill(buffer, offset, offset + result, (byte) 0);
         }
@@ -373,11 +381,17 @@ public class MicrophoneHandler implements ICameraHandler {
 
         if (isVideoSyncMode()) {
             long posMs = getVideoPlaybackPositionMs();
-            AudioDataProvider.fillShortsAtPosition(buffer, offset, result,
+            int filled = AudioDataProvider.fillShortsAtPosition(buffer, offset, result,
                     p.sampleRate, p.channelCount, posMs);
+            if (filled <= 0) {
+                Arrays.fill(buffer, offset, offset + result, (short) 0);
+            }
         } else if (isReplaceMode()) {
-            AudioDataProvider.fillShorts(buffer, offset, result,
+            int filled = AudioDataProvider.fillShorts(buffer, offset, result,
                     p.sampleRate, p.channelCount);
+            if (filled <= 0) {
+                Arrays.fill(buffer, offset, offset + result, (short) 0);
+            }
         } else {
             Arrays.fill(buffer, offset, offset + result, (short) 0);
         }
@@ -602,13 +616,21 @@ public class MicrophoneHandler implements ICameraHandler {
         if (isVideoSyncMode()) {
             long posMs = getVideoPlaybackPositionMs();
             buffer.position(pos - result);
-            AudioDataProvider.fillByteBufferAtPosition(buffer, result,
+            int filled = AudioDataProvider.fillByteBufferAtPosition(buffer, result,
                     p.sampleRate, p.channelCount, posMs);
+            if (filled <= 0) {
+                buffer.position(pos - result);
+                buffer.put(new byte[result]);
+            }
             buffer.position(pos);
         } else if (isReplaceMode()) {
             buffer.position(pos - result);
-            AudioDataProvider.fillByteBuffer(buffer, result,
+            int filled = AudioDataProvider.fillByteBuffer(buffer, result,
                     p.sampleRate, p.channelCount);
+            if (filled <= 0) {
+                buffer.position(pos - result);
+                buffer.put(new byte[result]);
+            }
             buffer.position(pos);
         } else {
             byte[] zeros = new byte[result];
@@ -629,11 +651,17 @@ public class MicrophoneHandler implements ICameraHandler {
 
         if (isVideoSyncMode()) {
             long posMs = getVideoPlaybackPositionMs();
-            AudioDataProvider.fillFloatsAtPosition(buffer, offset, result,
+            int filled = AudioDataProvider.fillFloatsAtPosition(buffer, offset, result,
                     p.sampleRate, p.channelCount, posMs);
+            if (filled <= 0) {
+                Arrays.fill(buffer, offset, offset + result, 0.0f);
+            }
         } else if (isReplaceMode()) {
-            AudioDataProvider.fillFloats(buffer, offset, result,
+            int filled = AudioDataProvider.fillFloats(buffer, offset, result,
                     p.sampleRate, p.channelCount);
+            if (filled <= 0) {
+                Arrays.fill(buffer, offset, offset + result, 0.0f);
+            }
         } else {
             Arrays.fill(buffer, offset, offset + result, 0.0f);
         }
