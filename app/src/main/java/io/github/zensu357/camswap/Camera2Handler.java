@@ -167,14 +167,28 @@ public class Camera2Handler implements ICameraHandler {
                                 + " -> 虚拟Surface: " + vSurface);
                         args[0] = vSurface;
                     } else if (isYuv) {
-                        HookMain.camera2Hook.pumpDirectYuvFrame(targetSurface);
-                        Surface vSurface = HookMain.camera2Hook.getVirtualSurfaceFor(targetSurface);
-                        if (vSurface == null || !vSurface.isValid()) {
-                            vSurface = HookMain.camera2Hook.getVirtualSurface();
+                        try {
+                            HookMain.camera2Hook.pumpDirectYuvFrame(targetSurface);
+                        } catch (Throwable ignored) {
                         }
-                        LogUtil.log("【CS】【addTarget】重定向 YUV Reader 目标 -> 原始Surface: " + targetSurface
-                                + " -> 虚拟Surface: " + vSurface);
-                        args[0] = vSurface;
+                        Surface vSurface = null;
+                        try {
+                            vSurface = HookMain.camera2Hook.getVirtualSurfaceFor(targetSurface);
+                            if (vSurface == null || !vSurface.isValid()) {
+                                vSurface = HookMain.camera2Hook.getVirtualSurface();
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                        // Only redirect if we have a valid virtual surface.
+                        // Otherwise leave the original target untouched to avoid crashes
+                        // (e.g. Emma dating app crashes on invalid surface).
+                        if (vSurface != null && vSurface.isValid()) {
+                            LogUtil.log("【CS】【addTarget】重定向 YUV Reader 目标 -> 原始Surface: " + targetSurface
+                                    + " -> 虚拟Surface: " + vSurface);
+                            args[0] = vSurface;
+                        } else {
+                            LogUtil.log("【CS】【addTarget】虚拟Surface无效，保留原始YUV目标: " + targetSurface);
+                        }
                     } else {
                         LogUtil.log("【CS】【addTarget】保留真实辅助流/JPEG目标: " + targetSurface);
                     }
