@@ -634,9 +634,12 @@ public final class Camera2SessionHook {
     }
 
     public void rememberPreviewSurface(Surface surface) {
-        if (surface == null || isTrackedReaderSurface(surface)) {
+        if (surface == null) {
             return;
         }
+        // Note: Do NOT check isTrackedReaderSurface here — Camera2Handler already
+        // filters out YUV/JPEG before calling this. Emma's preview surfaces have
+        // null names and may be tracked, but they still need fake frames.
         boolean isNew = false;
         if (previewSurface == null) {
             previewSurface = surface;
