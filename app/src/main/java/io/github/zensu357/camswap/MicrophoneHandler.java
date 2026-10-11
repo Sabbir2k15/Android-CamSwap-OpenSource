@@ -440,6 +440,43 @@ public class MicrophoneHandler implements ICameraHandler {
         return filled;
     }
 
+    /**
+     * GlassMic-style: provide fake audio directly into a ByteBuffer WITHOUT calling the real
+     * AudioRecord.read(). Mirrors provideFakeByteAudio for the two ByteBuffer overloads.
+     * Returns the number of bytes provided (to be returned as the read() result).
+     */
+    private static int provideFakeByteBufferAudio(Object audioRecord, ByteBuffer buffer, int size) {
+        if (buffer == null || size <= 0) {
+            return 0;
+        }
+        int toFill = Math.min(size, buffer.remaining());
+        if (toFill <= 0) {
+            return 0;
+        }
+        AudioRecordParams p = getParams(audioRecord);
+        int filled = 0;
+
+        if (isVideoSyncMode()) {
+            long posMs = getVideoPlaybackPositionMs();
+            filled = AudioDataProvider.fillByteBufferAtPosition(buffer, toFill,
+                    p.sampleRate, p.channelCount, posMs);
+        } else if (isReplaceMode()) {
+            filled = AudioDataProvider.fillByteBuffer(buffer, toFill,
+                    p.sampleRate, p.channelCount);
+        }
+
+        if (filled <= 0) {
+            // No audio data or mute mode — fill with silence.
+            buffer.put(new byte[toFill]);
+            filled = toFill;
+        }
+
+        // Pace to maintain real-time rhythm (prevents app from spinning).
+        paceAudio(filled / 2 / Math.max(1, p.channelCount), p.sampleRate);
+
+        return filled;
+    }
+
     private static void replaceByteArrayResult(Object audioRecord, byte[] buffer, int offset, int result,
             String methodTag) {
         if (!isMicHookEnabled() || result <= 0 || buffer == null) {
@@ -682,6 +719,13 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { ByteBuffer.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    // GlassMic-style: if mic hook is active, NEVER call the real read().
+                    // Provide fake audio directly to guarantee real mic never leaks.
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeByteBufferAudio(chain.getThisObject(),
+                                (ByteBuffer) args[0], (int) args[1]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceByteBufferResult(chain.getThisObject(), (ByteBuffer) args[0], intResult(result), "ByteBuffer");
                     return result;
@@ -708,6 +752,13 @@ public class MicrophoneHandler implements ICameraHandler {
         hookMethod(classLoader, "android.media.AudioRecord", "read",
                 new Class<?>[] { ByteBuffer.class, int.class, int.class }, chain -> {
                     Object[] args = toArgs(chain.getArgs());
+                    // GlassMic-style: if mic hook is active, NEVER call the real read().
+                    // Provide fake audio directly to guarantee real mic never leaks.
+                    if (isMicHookEnabled()) {
+                        int provided = provideFakeByteBufferAudio(chain.getThisObject(),
+                                (ByteBuffer) args[0], (int) args[1]);
+                        return provided;
+                    }
                     Object result = chain.proceed(args);
                     replaceByteBufferResult(chain.getThisObject(), (ByteBuffer) args[0], intResult(result),
                             "ByteBuffer(int,int)");
