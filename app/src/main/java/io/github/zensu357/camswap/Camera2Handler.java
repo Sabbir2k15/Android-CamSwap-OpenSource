@@ -159,13 +159,23 @@ public class Camera2Handler implements ICameraHandler {
 
                     if (isSurfaceTexture || (!isJpeg && !HookMain.camera2Hook.isTrackedReaderSurface(targetSurface))) {
                         HookMain.camera2Hook.rememberPreviewSurface(targetSurface);
-                        Surface vSurface = HookMain.camera2Hook.getVirtualSurfaceFor(targetSurface);
-                        if (vSurface == null || !vSurface.isValid()) {
-                            vSurface = HookMain.camera2Hook.getVirtualSurface();
+                        Surface vSurface = null;
+                        try {
+                            vSurface = HookMain.camera2Hook.getVirtualSurfaceFor(targetSurface);
+                            if (vSurface == null || !vSurface.isValid()) {
+                                vSurface = HookMain.camera2Hook.getVirtualSurface();
+                            }
+                        } catch (Throwable ignored) {
                         }
-                        LogUtil.log("【CS】【addTarget】重定向主预览目标 -> 原始Surface: " + targetSurface
-                                + " -> 虚拟Surface: " + vSurface);
-                        args[0] = vSurface;
+                        // Only redirect if we have a valid virtual surface.
+                        // Otherwise leave the original target untouched to avoid black screen.
+                        if (vSurface != null && vSurface.isValid()) {
+                            LogUtil.log("【CS】【addTarget】重定向主预览目标 -> 原始Surface: " + targetSurface
+                                    + " -> 虚拟Surface: " + vSurface);
+                            args[0] = vSurface;
+                        } else {
+                            LogUtil.log("【CS】【addTarget】预览虚拟Surface无效，保留原始目标: " + targetSurface);
+                        }
                     } else if (isYuv) {
                         try {
                             HookMain.camera2Hook.pumpDirectYuvFrame(targetSurface);
