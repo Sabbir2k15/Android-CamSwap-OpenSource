@@ -72,6 +72,10 @@ public final class Camera2SessionHook {
     Surface readerSurface;
     Surface readerSurface1;
 
+    // YUV-based preview renderers for 30fps (bypasses slow MediaPlayer for AV1)
+    private YuvPreviewRenderer yuvPreviewRenderer;
+    private YuvPreviewRenderer yuvPreviewRenderer1;
+
     // Tracker for Photo Fake
     public final Set<Surface> trackedReaderSurfaces = Collections
             .newSetFromMap(new ConcurrentHashMap<Surface, Boolean>());
@@ -350,6 +354,15 @@ public final class Camera2SessionHook {
                     setBypassCurrentSession(false);
                     yuvBridgeSessionReady = false;
                     stopAllWhatsAppYuvPumps();
+                    // Stop YUV preview renderers
+                    if (yuvPreviewRenderer != null) {
+                        yuvPreviewRenderer.stop();
+                        yuvPreviewRenderer = null;
+                    }
+                    if (yuvPreviewRenderer1 != null) {
+                        yuvPreviewRenderer1.stop();
+                        yuvPreviewRenderer1 = null;
+                    }
                     playerManager.releaseCamera2Resources();
                     releaseImageWriters();
                 } catch (Throwable t) {
@@ -428,8 +441,43 @@ public final class Camera2SessionHook {
         lastInitPreview = previewSurface;
         lastInitPreview1 = previewSurface1;
         pendingPlayback = false;
+
+        // Use YUV-based preview renderer for 30fps (bypasses slow MediaPlayer).
+        // The YUV decoder already runs at 30fps for calls via hardware.
+        boolean useYuvPreview = false;
+        if (yuvDecoder != null && previewSurface != null && previewSurface.isValid()) {
+            try {
+                if (yuvPreviewRenderer != null) {
+                    yuvPreviewRenderer.stop();
+                }
+                yuvPreviewRenderer = new YuvPreviewRenderer(previewSurface, yuvDecoder);
+                yuvPreviewRenderer.start();
+                useYuvPreview = true;
+                LogUtil.log("【CS】YUV预览渲染器已启动 (30fps) for: " + previewSurface);
+            } catch (Throwable t) {
+                LogUtil.e("【CS】YUV预览渲染器启动失败: " + t.getMessage(), t);
+            }
+        }
+        if (yuvDecoder != null && previewSurface1 != null && previewSurface1.isValid()) {
+            try {
+                if (yuvPreviewRenderer1 != null) {
+                    yuvPreviewRenderer1.stop();
+                }
+                yuvPreviewRenderer1 = new YuvPreviewRenderer(previewSurface1, yuvDecoder);
+                yuvPreviewRenderer1.start();
+                useYuvPreview = true;
+                LogUtil.log("【CS】YUV预览渲染器1已启动 (30fps) for: " + previewSurface1);
+            } catch (Throwable t) {
+                LogUtil.e("【CS】YUV预览渲染器1启动失败: " + t.getMessage(), t);
+            }
+        }
+
+        // If YUV preview is used, skip MediaPlayer for preview surfaces (pass null).
+        // MediaPlayer is still needed for reader surfaces if any.
+        Surface mpPreview = useYuvPreview ? null : previewSurface;
+        Surface mpPreview1 = useYuvPreview ? null : previewSurface1;
         playerManager.initCamera2Players(readerSurface, readerSurface1,
-                previewSurface, previewSurface1);
+                mpPreview, mpPreview1);
         markYuvBridgeSessionReadyIfPossible();
         startContinuousYuvPumper();
 
