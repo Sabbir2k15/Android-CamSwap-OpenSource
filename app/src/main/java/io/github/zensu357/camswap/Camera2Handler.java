@@ -157,7 +157,10 @@ public class Camera2Handler implements ICameraHandler {
                     boolean isJpeg = HookMain.camera2Hook.isJpegReaderSurface(targetSurface);
                     boolean isYuv = HookMain.camera2Hook.isYuvReaderSurface(targetSurface);
 
-                    if (isSurfaceTexture || (!isJpeg && !HookMain.camera2Hook.isTrackedReaderSurface(targetSurface))) {
+                    // Aggressive preview detection: if not YUV and not JPEG, treat as preview.
+                    // This handles surfaces with null names (e.g. Emma's preview) that
+                    // isSurfaceTextureSurface() misses.
+                    if (!isYuv && !isJpeg) {
                         HookMain.camera2Hook.rememberPreviewSurface(targetSurface);
                         Surface vSurface = null;
                         try {
