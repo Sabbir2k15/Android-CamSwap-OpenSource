@@ -5,6 +5,8 @@ import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.view.Surface;
 
+import io.github.zensu357.camswap.utils.LogUtil;
+
 /**
  * Renders YUV frames from MediaCodecYuvDecoder to a preview Surface at 30fps.
  * Uses hardware-decoded YUV (same as call path) instead of MediaPlayer (which
